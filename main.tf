@@ -83,28 +83,6 @@ resource "azurerm_network_security_rule" "nsg-ssh-web-rule" {
   network_security_group_name = azurerm_network_security_group.nsg-web.name
 }
 
-# Create Network interface for VM
-resource "azurerm_network_interface" "nic-web" {
-  name                = "nic-web-${var.prefix}"
-  resource_group_name = azurerm_resource_group.rg-web.name
-  location            = azurerm_resource_group.rg-web.location
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.subnet-web.id
-    private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.pip-web.id
-  }
-}
-
-resource "azurerm_public_ip" "pip-web" {
-  name                = "pip-web-${var.prefix}"
-  location            = azurerm_resource_group.rg-web.location
-  resource_group_name = azurerm_resource_group.rg-web.name
-  allocation_method   = "Dynamic"
-  sku                 = "Basic"
-}
-
 resource "azurerm_network_interface" "nic-db" {
   name                = "nic-db-${var.prefix}"
   resource_group_name = azurerm_resource_group.rg-web.name
@@ -118,36 +96,43 @@ resource "azurerm_network_interface" "nic-db" {
   }
 }
 
-# Apply Security group rules on network interface of VM
-resource "azurerm_network_interface_security_group_association" "vm-sg-asoc" {
-  network_interface_id      = azurerm_network_interface.nic-web.id
-  network_security_group_id = azurerm_network_security_group.nsg-web.id
-}
-
 # Create Virtual Machine (VM) for public Web
-resource "azurerm_windows_virtual_machine" "vm-web" {
-  name                = "vm-web-${var.prefix}"
+resource "azurerm_windows_virtual_machine_scale_set" "scale" {
+  name                = "sc-${var.prefix}"
   resource_group_name = azurerm_resource_group.rg-web.name
   location            = azurerm_resource_group.rg-web.location
-  size                = "Standard_D2s_v3"
-
+  sku                 = "Standard_D2s_v3"
+  instances           = 2
   admin_username = "adminuser"
   admin_password = "Admin+123456"
-
-  network_interface_ids = [
-    azurerm_network_interface.nic-web.id,
-  ]
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
 
   source_image_reference {
     publisher = "MicrosoftWindowsServer"
     offer     = "WindowsServer"
-    sku       = "2016-Datacenter"
+    sku       = "2016-Datacenter-Server-Core"
     version   = "latest"
+  }
+
+  os_disk {
+    storage_account_type = "Standard_LRS"
+    caching              = "ReadWrite"
+  }
+
+  network_interface {
+    name    = "nic-web-${var.prefix}"    
+    primary = true
+    # Apply Security group rules on network interface of VM
+    network_security_group_id = azurerm_network_security_group.nsg-web.id
+    
+    ip_configuration {
+      name      = "internal"
+      primary   = true
+      subnet_id = azurerm_subnet.subnet-web.id
+      public_ip_address {
+        name    = "pip-web-${var.prefix}"    
+        idle_timeout_in_minutes = 15  
+      }
+    }
   }
 }
 
